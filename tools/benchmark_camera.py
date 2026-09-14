@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Measure complete MJPEG frames received from the local camera (stdlib only)."""
+"""Measure complete MJPEG frames (stdlib; optional Pillow decoding)."""
 
 import argparse
+import io
 import json
 from pathlib import Path
 import secrets
+import statistics
 import struct
 import time
 from urllib.error import HTTPError
@@ -103,10 +105,19 @@ def benchmark(args):
     if original["streaming"]:
         raise RuntimeError("Pause the browser stream before benchmarking.")
     viewer = secrets.token_hex(8)
+    image_decoder = None
+    if getattr(args, "decode", False):
+        try:
+            from PIL import Image
+        except ImportError as error:
+            raise RuntimeError("--decode requires Pillow (python3 -m pip install Pillow).") from error
+        image_decoder = Image
     count = total_bytes = 0
     timestamps = set()
     intervals = []
+    capture_intervals = []
     sample_start = last_frame = None
+    last_capture_us = None
     first_frame = None
     last_status = None
     errors = []
@@ -118,20 +129,32 @@ def benchmark(args):
                 now = time.monotonic()
                 if jpeg_dimensions(jpeg) != SIZES[args.resolution]:
                     raise ValueError("Camera sent a JPEG at the wrong resolution")
+                if image_decoder:
+                    with image_decoder.open(io.BytesIO(jpeg)) as image:
+                        image.load()
+                        if image.size != SIZES[args.resolution]:
+                            raise ValueError("Decoded JPEG has the wrong resolution")
+                if not timestamp:
+                    raise ValueError("Missing capture timestamp")
+                seconds, micros = timestamp.split(".")
+                capture_us = int(seconds) * 1_000_000 + int(micros)
                 if now < warmup_until:
                     continue
                 if sample_start is None:
                     # Use this complete frame as the time origin; exclude its bytes.
                     sample_start = last_frame = now
                     first_frame = jpeg
+                    last_capture_us = capture_us
                     continue
-                if timestamp is None or timestamp in timestamps:
-                    raise ValueError("Missing or repeated capture timestamp")
+                if capture_us <= last_capture_us:
+                    raise ValueError("Repeated or out-of-order capture timestamp")
                 count += 1
                 total_bytes += len(jpeg)
                 timestamps.add(timestamp)
                 intervals.append(now - last_frame)
+                capture_intervals.append(capture_us - last_capture_us)
                 last_frame = now
+                last_capture_us = capture_us
                 if now - sample_start >= args.seconds:
                     # Verify the control server still responds during streaming.
                     last_status = api(base, "/status")
@@ -151,8 +174,12 @@ def benchmark(args):
             "received_fps": round(count / elapsed, 2),
             "received_mbps": round(total_bytes * 8 / elapsed / 1_000_000, 2),
             "mean_jpeg_kib": round(total_bytes / count / 1024, 1),
+            "median_frame_interval_ms": round(statistics.median(intervals) * 1000, 1),
             "p95_frame_interval_ms": round(ordered[min(len(ordered) - 1, int(len(ordered) * .95))] * 1000, 1),
             "max_frame_interval_ms": round(max(intervals) * 1000, 1),
+            "median_capture_interval_ms": round(statistics.median(capture_intervals) / 1000, 1),
+            "min_capture_interval_ms": round(min(capture_intervals) / 1000, 1),
+            "decoded_frames": count if image_decoder else None,
             "server_status": last_status,
         }
         if args.save_frame:
@@ -181,6 +208,7 @@ def main():
     parser.add_argument("--seconds", type=float, default=20)
     parser.add_argument("--warmup", type=float, default=3)
     parser.add_argument("--save-frame", type=Path)
+    parser.add_argument("--decode", action="store_true", help="Decode every JPEG with Pillow, in addition to checking its markers")
     parser.add_argument("--json-output", type=Path)
     args = parser.parse_args()
     if not 10 <= args.quality <= 40 or args.seconds <= 0 or args.warmup < 0:

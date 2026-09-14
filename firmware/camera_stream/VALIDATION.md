@@ -1,6 +1,100 @@
 # Hardware verification — 14 September 2026
 
-Tested on the connected Freenove ESP32-WROVER / OV2640, ESP32-D0WD-V3 revision
+## FPS optimization
+
+The connected camera identifies itself as **OV3660, PID `0x3660`**. The earlier
+OV2640 identification in project notes was incorrect for this unit.
+
+The accepted change increases the TCP send buffer from **5,744 to 32,768 bytes**.
+The camera keeps **1600 × 1200, JPEG compression 12, 20 MHz XCLK, two PSRAM
+buffers, and the original asynchronous HTTP/MJPEG implementation**.
+
+All following streaming runs checked complete JPEGs, dimensions, increasing
+capture timestamps, and decoded **every** JPEG with Pillow, including warmup.
+They captured an indoor ceiling/room scene with a three-second warmup. Wi-Fi
+and image size varied; the final RSSI reading and JPEG sizes show those limits.
+
+| Configuration | Received FPS | Mean JPEG | Final RSSI | Measured duration | Decoded measured frames |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original TCP buffer, control | 7.42 | 45.0 KiB | −53 dBm | 25.1 s | 186 |
+| 32 KiB TCP buffer | 13.47 | 45.3 KiB | −53 dBm | 25.0 s | 337 |
+| 32 KiB, longer run | 13.37 | 50.8 KiB | −76 dBm | 120.0 s | 1,605 |
+| Original firmware restored and retested | 6.89 | 49.7 KiB | −79 dBm | 30.0 s | 207 |
+| Finished optimized build, stability run | 13.37 | 53.6 KiB | −78 dBm | 180.0 s | 2,407 |
+
+The first controlled comparison improved received FPS by **81.5%** at the same
+resolution and compression. Capture-only timing at the original clock was
+13.9 FPS. The larger TCP window lets more JPEG data be queued while earlier
+packets are acknowledged, bringing delivery close to that capture rate.
+
+Raw reports are in `.arduino-build/fps-stock-tcp-fresh-0-mode0-q12.json`,
+`fps-tcp32-buffers2-clock20-0-mode0-q12.json`,
+`fps-tcp32-clock20-stability-0-mode0-q12.json`, and
+`fps-original-repeat-q12.json` in the same directory. The finished build's
+three-minute report is `.arduino-build/fps-final-uxga-q12.json`; its sample
+image was also visually checked.
+
+At the user's existing compression setting of **27**, the finished build
+delivered **13.40 FPS** over 20.1 seconds, with 269 unique, successfully decoded
+2 MP frames. That report is `.arduino-build/fps-final-uxga-q27.json`.
+
+### Experiments not retained
+
+- Raw multipart output, scatter/gather writes, and TCP_NODELAY did not provide
+  a consistent additional improvement. The original HTTP streaming code remains.
+- A third camera buffer did not show a reliable improvement.
+- A 24 MHz clock reached 16.21 FPS in a short run, but subsequent full JPEG
+  decoding found corrupt images. Keeping its pixel bus at 10 MHz also failed
+  decoding. Both faster-clock configurations were rejected.
+- Temporary tuning, capture-probe, and task-diagnostic endpoints were removed.
+  They return HTTP 404 in the finished firmware.
+
+### Build and runtime verification
+
+`python3 tools/build_camera.py` builds the optimized profile using Arduino ESP32
+3.3.11 / ESP-IDF 5.5.5. The helper verified **164 lwIP headers** against source
+revision `fd432e4ee2cfb7f7f1c7eb7227e0173412e7b84e`, rebuilt the four affected
+TCP source files in a local library copy, and checked all four selections in the
+firmware link map. The installed SDK was not edited.
+
+The finished build uses **1,069,381 bytes of program flash (81%)** and
+**59,904 bytes of static RAM (18%)**. Its 460800-baud upload passed flash hash
+verification. The stock-network build also compiles and selects the original
+SDK library. The original and final firmware binaries are saved locally in
+`.arduino-build/fps-original/` and `.arduino-build/fps-final/`.
+
+Runtime checks on the finished firmware passed:
+
+- The three-minute 2 MP run delivered 2,407 unique, fully decoded measured
+  frames without an error, plus successfully decoded warmup frames.
+- `/status` reported sensor PID `13920`, `xclk_mhz: 20`, and
+  `tcp_send_buffer: 32768`; it responded in 40.5 ms during streaming.
+- Second viewers, malformed viewer IDs and invalid settings were rejected.
+  A stop request for another viewer did not interrupt the stream.
+- Live changes between VGA, SXGA and UXGA, and compression 10, 12 and 40,
+  produced correctly decoded frames.
+- Clean stopping and four abrupt disconnect/reconnect cycles released the
+  viewing session.
+- A client that stopped reading could be stopped in 5.27 seconds while control
+  requests remained responsive; another viewer could then connect.
+- Idle free heap after these checks was 153,576 bytes, with no restart or
+  reported capture error.
+- The browser displayed the live 2 MP image, and pause/resume worked. The
+  original compression setting of 27 was restored and the viewer left paused.
+
+The larger TCP window uses more internal RAM while data is queued. One active
+compression-27 sample had 68,756 bytes free; after stopping, free heap recovered
+to 154,780 bytes.
+
+The runtime transcript is `.arduino-build/fps-final-runtime-checks.txt`.
+The build provenance and flashed firmware SHA-256 are recorded in
+`.arduino-build/fps-final/profile.json`.
+
+## Earlier streaming baseline
+
+The following notes and measurements predate the TCP-window optimization.
+
+Tested on the connected Freenove ESP32-WROVER, ESP32-D0WD-V3 revision
 3.1, with 4 MiB PSRAM. Arduino ESP32 core 3.3.11, FQBN
 `esp32:esp32:esp32wrover`, default partition scheme and 20 MHz camera clock.
 

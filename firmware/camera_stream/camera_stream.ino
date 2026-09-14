@@ -16,7 +16,7 @@ bool initCamera() {
     return false;
   }
 
-  // Freenove ESP32-WROVER / OV2640 pin mapping.
+  // Freenove ESP32-WROVER camera pin mapping.
   camera_config_t config = {};
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
@@ -50,8 +50,11 @@ bool initCamera() {
     Serial.printf("Camera init failed: %s (0x%x)\n", esp_err_to_name(result), result);
     return false;
   }
-  Serial.printf("Camera ready: 1600x1200 JPEG, compression 12, PSRAM %u bytes\n",
-                ESP.getPsramSize());
+  const sensor_t* sensor = esp_camera_sensor_get();
+  Serial.printf("Camera ready: 1600x1200 JPEG, compression 12, sensor PID 0x%04x, %u MHz\n",
+                sensor->id.PID, sensor->xclk_freq_hz / 1000000);
+  Serial.printf("PSRAM %u bytes; TCP send buffer %u bytes\n",
+                ESP.getPsramSize(), static_cast<unsigned>(CAMERA_TCP_SEND_BUFFER_BYTES));
   return true;
 }
 

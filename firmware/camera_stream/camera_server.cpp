@@ -87,10 +87,11 @@ esp_err_t pageHandler(httpd_req_t* req) {
 
 esp_err_t statusHandler(httpd_req_t* req) {
   const StreamStats snapshot = readStats();
+  const sensor_t* sensor = esp_camera_sensor_get();
   const int64_t now = esp_timer_get_time();
   const int64_t ageMs = snapshot.lastFrameUs ? (now - snapshot.lastFrameUs) / 1000 : -1;
   const bool flowing = snapshot.active && ageMs >= 0 && ageMs < 3000;
-  char response[768];
+  char response[1024];
   snprintf(response, sizeof(response),
            "{\"resolution\":\"%s\",\"width\":%u,\"height\":%u,\"quality\":%d,"
            "\"streaming\":%s,\"viewer\":\"%s\",\"fps\":%.2f,\"mbps\":%.2f,"
@@ -98,7 +99,8 @@ esp_err_t statusHandler(httpd_req_t* req) {
            "\"frames\":%lu,\"bytes\":%llu,\"frame_bytes\":%lu,"
            "\"frame_width\":%u,\"frame_height\":%u,\"last_frame_ms\":%lld,"
            "\"capture_errors\":%lu,\"rssi\":%d,\"free_heap\":%u,"
-           "\"free_psram\":%u,\"uptime_s\":%llu}",
+           "\"free_psram\":%u,\"sensor_pid\":%u,\"xclk_mhz\":%u,"
+           "\"tcp_send_buffer\":%u,\"uptime_s\":%llu}",
            selectedResolution->name, selectedResolution->width, selectedResolution->height,
            selectedQuality, snapshot.active ? "true" : "false", snapshot.viewer,
            flowing ? snapshot.fps : 0, flowing ? snapshot.mbps : 0,
@@ -108,6 +110,8 @@ esp_err_t statusHandler(httpd_req_t* req) {
            static_cast<unsigned long>(snapshot.frameBytes), snapshot.width, snapshot.height,
            static_cast<long long>(ageMs), static_cast<unsigned long>(snapshot.captureErrors),
            WiFi.RSSI(), ESP.getFreeHeap(), ESP.getFreePsram(),
+           sensor ? sensor->id.PID : 0, sensor ? sensor->xclk_freq_hz / 1000000 : 0,
+           static_cast<unsigned>(CAMERA_TCP_SEND_BUFFER_BYTES),
            static_cast<unsigned long long>(now / 1000000));
   return json(req, response);
 }
