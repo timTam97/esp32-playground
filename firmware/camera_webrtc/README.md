@@ -1,11 +1,44 @@
 # 2 MP JPEG over WebRTC experiment
 
 **Status: the local acceptance gate failed on 15 September 2026.** The original
-Arduino firmware was restored and verified. This project is an experimental
-firmware and USB-assisted browser harness, not a deployed private AWS viewer.
+Arduino firmware was restored and verified at the end of that experiment.
+The private AWS viewer was not deployed.
+
+This ESP-IDF firmware sends camera JPEGs through an encrypted WebRTC data
+channel. The [browser harness](../../web/README.md) uses USB for signaling;
+JPEG payloads travel directly between the board and browser.
 
 See [the research and implementation record](../../docs/JPEG_WEBRTC_RESEARCH.md)
-for the measured result and the remaining work.
+for detailed evidence and the proposed remote-viewer architecture.
+
+## Measured result — 15 September 2026
+
+**Result: the local acceptance gate failed.** The requirement was at least
+2 browser-decoded fps for ten minutes while preserving 2 MP detail.
+
+| Measurement | Observed result |
+| --- | --- |
+| Initial short sample | Approximately 2.72 decoded fps |
+| Formal measurement window | 317 seconds; connection ended before ten minutes |
+| Frames decoded during that window | 577, averaging **1.82 fps** |
+| Valid decoded frames across the full session | 701 |
+| JPEG decode errors / malformed chunks | 0 / 0 |
+| Incomplete frames at gate completion | 104 |
+| Final rolling estimated p95 display latency | 1.83 seconds |
+
+Send calls developed stalls and the peer logged DTLS retry errors as Wi-Fi
+signal weakened. The cause has not been isolated. A further experiment should
+establish a repeatable stronger-signal baseline, compare encryption modes, and
+investigate DTLS/SCTP backpressure and packet sizing.
+
+The **original firmware was restored**, its complete 4 MiB flash digest matched
+the recovery snapshot, and the original HTTP stream again supplied valid 2 MP
+JPEGs. Native and web builds succeeded; seven transport tests and four recovery
+tests passed. These checks do not replace the failed sustained hardware gate.
+
+No AWS resources or Cognito account were created. Remote STUN/TURN, the
+password-protected deployment, twenty-session stability, one-hour renewal,
+physical iPhone Safari, and billing validation were not reached.
 
 ## Build environment
 
@@ -15,6 +48,7 @@ for the measured result and the remaining work.
 - ESP32-WROVER, OV3660 on the tested board, 4 MiB flash/PSRAM
 - 1600×1200 JPEG, quality 12 initially, two frame buffers, 20 MHz camera clock
 - 3 MiB app partition, 80 MHz PSRAM, 240 MHz CPU, separate receive task
+- 2 Mbps JPEG payload limit
 
 The build uses the existing ignored `firmware/camera_stream/wifi_credentials.h`.
 Create it from that directory's example if necessary. Generated binaries and full
@@ -25,9 +59,6 @@ Run from the repository root:
 ```sh
 python3 tools/webrtc.py setup
 python3 tools/webrtc.py build
-npm --prefix web ci
-npm --prefix web test
-npm --prefix web run build
 ```
 
 The isolated SDK, compiler and Python environment live under
@@ -63,33 +94,8 @@ SHA-256: 1735cdf6e2b0d8062cb82da49cc0655bd709b3a96ee74134399fad4c80675f31
 
 ## Local browser harness
 
-After flashing experimental firmware, run these in separate terminals:
-
-```sh
-.venv/bin/python tools/webrtc_lab.py
-npm --prefix web run dev
-```
-
-Open `http://127.0.0.1:5173` on the same Mac and press Start. Stop sends a control
-message, closes the peer and releases the camera. Backgrounding the page also
-stops viewing; returning requires Start again.
-
-The bridge listens only on loopback. It carries session descriptions and control
-events over USB; JPEG payloads travel between the ESP32 and browser over DTLS/SCTP.
-It rejects competing sessions, caps command size and redacts SDP in its log.
-
-The tested peer library does not resolve Chrome's mDNS-obscured host candidates.
-The local lab used an isolated Chrome profile launched with:
-
-```text
---disable-features=WebRtcHideLocalIpsWithMdns
-```
-
-This is a lab-only setting. Normal Chrome/Safari operation with STUN/TURN has not
-been verified. Do not change an everyday browser profile for this experiment.
-
-The test interface exposes browser-decoded frame counts and device measurements
-in `window.garageMetrics`, as well as in the visible measurements panel.
+See the [browser project README](../../web/README.md) for its build, USB bridge,
+local viewing instructions, and browser compatibility limits.
 
 ## Wire interface
 
