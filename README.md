@@ -1,5 +1,9 @@
 # Garage camera
 
+The separate [JPEG-over-WebRTC experiment](firmware/camera_webrtc/README.md)
+reached encrypted 2 MP browser viewing, but failed its sustained acceptance gate.
+The original firmware was restored; the AWS private viewer is not deployed.
+
 Firmware for the Freenove ESP32-WROVER with a camera. The connected unit reports
 an **OV3660** (sensor PID `0x3660`); earlier project notes identified it as an
 OV2640. The streaming page keeps its existing 1600 × 1200 maximum. Choose one sketch:
@@ -120,6 +124,60 @@ share port 80:
 | `GET /stream?viewer=<hex-id>` | MJPEG; one viewer, 1–32 hexadecimal characters |
 | `POST /settings` | Form fields `resolution=UXGA&quality=12` |
 | `POST /stop?viewer=<hex-id>` | Stop only that viewer's stream |
+
+## JPEG over WebRTC experiment — 15 September 2026
+
+The experimental native ESP-IDF project in `firmware/camera_webrtc` sends the
+sensor's JPEG frames through an encrypted WebRTC data channel to a browser.
+A loopback-only Python bridge exchanges signaling over USB; the JPEG payload
+travels directly between the board and browser. This was the hardware-validation
+stage of a proposed low-cost private viewer using AWS Kinesis signaling and TURN.
+
+The implementation includes:
+
+- ESP-IDF **5.5.5**, `esp_peer` **1.5.5**, and `esp32-camera` **2.1.7**, with locked
+  dependencies and an isolated build toolchain.
+- Fixed **1600 × 1200** capture, initially at JPEG compression **12**, separate
+  receive processing, and a **2 Mbps** JPEG payload limit.
+- Versioned frame/chunk headers, bounded queues, incomplete-frame expiry, and
+  reliable controls alongside an unordered JPEG data channel.
+- A TypeScript/Vite browser harness with Start/Stop, fullscreen, image settings,
+  decoded-frame measurements, and direct/relay status.
+- Full-flash backup, SHA-256 validation, flashing and recovery commands.
+
+**Result: the local acceptance gate failed.** The requirement was at least
+2 browser-decoded fps for ten minutes while preserving 2 MP detail.
+
+| Measurement | Observed result |
+| --- | --- |
+| Initial short sample | Approximately 2.72 decoded fps |
+| Formal measurement window | 317 seconds; connection ended before ten minutes |
+| Frames decoded during that window | 577, averaging **1.82 fps** |
+| Valid decoded frames across the full session | 701 |
+| JPEG decode errors / malformed chunks | 0 / 0 |
+| Incomplete frames at gate completion | 104 |
+| Final rolling estimated p95 display latency | 1.83 seconds |
+
+Send calls developed stalls and the peer logged DTLS retry errors as Wi-Fi
+signal weakened. The cause has not been isolated. A further experiment should
+establish a repeatable stronger-signal baseline, compare encryption modes, and
+investigate DTLS/SCTP backpressure and packet sizing.
+
+The **original firmware was restored**, its complete 4 MiB flash digest matched
+the recovery snapshot, and the original HTTP stream again supplied valid 2 MP
+JPEGs. Native and web builds succeeded; seven transport tests and four recovery
+tests passed. These checks do not replace the failed sustained hardware gate.
+
+No AWS resources or Cognito account were created. Remote STUN/TURN, the
+password-protected deployment, twenty-session stability, one-hour renewal,
+physical iPhone Safari, and billing validation were not reached.
+
+See the [experiment instructions](firmware/camera_webrtc/README.md) for build,
+backup, harness and recovery commands, and the
+[research and implementation record](docs/JPEG_WEBRTC_RESEARCH.md) for detailed
+measurements, firmware hashes, evidence locations and remaining work.
+Generated firmware, credentials, flash backups and runtime evidence remain
+ignored by git.
 
 ## Restore the garage monitor
 

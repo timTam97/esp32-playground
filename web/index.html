@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>Garage camera · local WebRTC experiment</title>
+  </head>
+  <body>
+    <main>
+      <header><div><small>LOCAL HARDWARE EXPERIMENT</small><h1>Garage camera</h1></div><span id="state">Stopped</span></header>
+      <section class="picture"><canvas id="camera" width="1600" height="1200" aria-label="Live garage camera"></canvas></section>
+      <section class="controls">
+        <button id="start">Start</button><button id="stop" disabled>Stop</button><button id="fullscreen">Fullscreen</button>
+        <label>Frame rate <input id="fps" type="number" min="2" max="5" value="2"></label>
+        <label>JPEG compression <input id="quality" type="number" min="10" max="40" value="12"></label>
+        <button id="apply">Apply settings</button>
+      </section>
+      <p id="summary">1600 × 1200 · no audio · USB-assisted signaling</p>
+      <p id="error" role="alert"></p>
+      <details open><summary>Experiment measurements</summary><pre id="metrics">{}</pre></details>
+      <details><summary>Connection events</summary><pre id="events"></pre></details>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

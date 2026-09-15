@@ -31,3 +31,13 @@ cdk-outputs*.json
 *.elf
 *.hex
 *.map
+
+# Native WebRTC firmware, local harness, and frontend output
+.webrtc-build/
+firmware/camera_webrtc/sdkconfig
+firmware/camera_webrtc/sdkconfig.old
+firmware/camera_webrtc/managed_components/
+node_modules/
+output/
+.playwright-cli/
+*.tsbuildinfo
